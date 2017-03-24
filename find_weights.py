@@ -1,4 +1,5 @@
 import numpy as np
+import os
 import pandas as pd
 from sklearn.preprocessing import normalize
 from scipy.spatial.distance import pdist
@@ -6,17 +7,23 @@ from scipy.spatial.distance import pdist
 from word2vec_pipeline.utils.data_utils import load_w2vec
 from word2vec_pipeline.utils.db_utils import item_iterator
 from word2vec_pipeline import simple_config
-
 from tqdm import tqdm
 
 config = simple_config.load()
 target_column = config['target_column']
 
+save_dest = config["score"]["output_data_directory"]
+f_db = config["score"]["score_word_document_dispersion"]["f_db"]
+f_save = os.path.join(save_dest, f_db)
+
+
+
 W = load_w2vec()
 n_vocab,n_dim = W.syn0.shape
 word2index = dict(zip(W.index2word, range(n_vocab)))
 
-batch_size = 2**10
+batch_size = 2**8
+n_epochs = 500
 
 ##################################################################
 
@@ -28,20 +35,41 @@ print "Building model"
 
 X = tf.placeholder(tf.float32, shape=[batch_size, n_vocab])
 word2vec_layer = tf.constant(W.syn0,shape=(n_vocab,n_dim))
-alpha = tf.Variable(tf.ones([n_vocab]))
 
-Y = X * tf.exp(alpha)
+e1 = tf.exp(1.0)
+alpha = tf.Variable(tf.ones([n_vocab])/e1)
+alpha = tf.clip_by_value(alpha, 0.0, 1.0)
+
+Y = X * tf.exp(alpha) / e1
+
 Y = tf.matmul(Y, word2vec_layer)
 Y = tf.nn.l2_normalize(Y, dim=1)
 dist = tf.matmul(Y, tf.transpose(Y))
+dist = tf.clip_by_value(dist,0,1)
+
 loss = (tf.reduce_sum(dist) - batch_size) / (batch_size**2-batch_size)
 optimizer = tf.train.AdamOptimizer(0.001).minimize(loss)
 #optimizer = tf.train.GradientDescentOptimizer(0.01).minimize(loss)
-#loss = weight_sum_model(batch_size=batch_size)
 
 print "Model building complete"
 
 ##################################################################
+
+
+score_config = simple_config.load()["score"]
+f_csv = os.path.join(
+    score_config["output_data_directory"],
+    score_config["term_document_frequency"]["f_db"],
+)
+IDF = pd.read_csv(f_csv)
+IDF = dict(zip(IDF["word"].values, IDF["count"].values))
+corpus_N = IDF.pop("__pipeline_document_counter")
+
+# Compute the IDF
+for key in IDF:
+    IDF[key] = np.log(float(corpus_N) / (IDF[key] + 1))
+IDF = [IDF[w] if w in IDF else 0.0 for w in W.index2word]
+IDF = np.array(IDF)
 
 
 V = []
@@ -56,29 +84,26 @@ for item in item_iterator():
 
 V = np.array(V)
 
-V[V>1] = 1.0
+#V[V>1] = 1.0
+#V = V*IDF
 
 n_samples = V.shape[0]
+
 import random
 
-config = tf.ConfigProto(device_count = {'GPU': 0})
-
 with tf.Session() as sess:
-#with tf.Session(config=config) as sess:
     init = tf.global_variables_initializer()
     sess.run(init)
 
     random.shuffle(V)
 
-    for k in xrange(10**10):
+    for k in xrange(n_epochs):
 
         epoch_loss = []
 
         for i in range(n_samples//batch_size - 1):
-
             
             v_batch = V[i*batch_size:(i+1)*batch_size]
-
             funcs = [optimizer, loss]
             _, ls = sess.run(funcs, feed_dict={X:v_batch})
             epoch_loss.append(ls)
@@ -89,19 +114,22 @@ with tf.Session() as sess:
 
         print k,np.mean(epoch_loss), a.max(), a.min()
         
-        if k%50==0:
-            df = pd.DataFrame(index=W.index2word)
+        if k and k%50==0:
+            df = pd.DataFrame()
+            df["words"] = W.index2word
             df["alpha"] = a
-            df.to_csv("solved_weights.csv")
+            df.set_index("words").to_csv(f_save)
             print df
 
 
-        
+
+            
+#####################################################################
+# numpy CPU VERSION FOR REFERENCE
 #####################################################################
 
-
+'''
 batch_size = len(V)
-
 
 def objective_func(alpha):
     X = normalize((V*alpha).dot(W.syn0))
@@ -118,5 +146,4 @@ alpha = np.ones(n_vocab)
 
 # Starts off at 31.19, 11.28
 print minimize(objective_func, alpha)#, method='Nelder-Mead')
-
-
+'''

@@ -356,3 +356,34 @@ class score_locality_hash(score_unique):
 
 
 #
+
+
+
+class score_word_document_dispersion(score_simple):
+    method = "word_document_dispersion"
+
+    def __init__(self, *args, **kwargs):
+        super(score_simple, self).__init__(*args, **kwargs)
+
+        f_db = os.path.join(
+            kwargs['output_data_directory'],
+            kwargs["score_word_document_dispersion"]['f_db'],
+        )
+
+        if not os.path.exists(f_db):
+            msg = "{} not computed yet, needed for WDD methods!"
+            raise ValueError(msg.format(f_db))
+
+        df = pd.read_csv(f_db).set_index('words')
+        df["weight"] = np.exp(df.alpha)/np.exp(1.0)
+        self.df = df
+
+    def get_weight(self, w):
+        if w not in self.df.index:
+            return 0.0
+        return self.df.ix[w,"weight"]
+
+
+    def _compute_item_weights(self, tokens, **da):
+        return dict([(w, self.get_weight(w)*da["local_counts"][w])
+                    for w in tokens])
