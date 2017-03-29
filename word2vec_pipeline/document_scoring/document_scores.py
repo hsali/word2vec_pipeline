@@ -104,6 +104,7 @@ class generic_document_score(corpus_iterator):
         # Find out which tokens are defined
         valid_tokens = [w for w in tokens if w in self.M]
 
+        da['_ref'] = row['_ref']
         da["local_counts"] = collections.Counter(valid_tokens)
         da["tokens"] = list(set(valid_tokens))
 
@@ -375,15 +376,70 @@ class score_word_document_dispersion(score_simple):
             raise ValueError(msg.format(f_db))
 
         df = pd.read_csv(f_db).set_index('words')
-        df["weight"] = np.exp(df.alpha)/np.exp(1.0)
+        df["weight"] = np.exp(df.alpha)/np.exp(1.0)        
         self.df = df
+
+        
+        f_csv = os.path.join(
+            kwargs["output_data_directory"],
+            kwargs["term_document_frequency"]["f_db"],
+        )
+        IDF = pd.read_csv(f_csv)
+
+        f_csv = pd.read_csv(f_csv)
+        IDF = dict(zip(IDF["word"].values, IDF["count"].values))
+        self.corpus_N = IDF.pop("__pipeline_document_counter")
+
+        # Compute the IDF
+        for key in IDF:
+            IDF[key] = np.log(float(self.corpus_N) / (IDF[key] + 1))
+        self.IDF = IDF
 
     def get_weight(self, w):
         if w not in self.df.index:
             return 0.0
-        return self.df.ix[w,"weight"]
+        return self.df.ix[w,"weight"]*self.IDF[w]
 
 
     def _compute_item_weights(self, tokens, **da):
-        return dict([(w, self.get_weight(w)*da["local_counts"][w])
-                    for w in tokens])
+        return dict([(w, self.get_weight(w)) for w in tokens])
+
+
+class score_aux_TF(score_simple_TF):
+    method = "aux_TF"
+
+    def __init__(self, *args, **kwargs):
+        #super(score_simple_TF, self).__init__(*args, **kwargs)
+        score_simple_TF.__init__(self, *args, **kwargs)
+        
+        from utils.data_utils import load_document_vectors
+        preV = load_document_vectors()['docv']
+
+        # Alpha was choosen by measuring dist plots
+        # to only capture the local behavior
+        
+        alpha = 50.0
+        VM = []
+        for v in tqdm(preV):
+            dist = alpha*preV.dot(v)
+            dist[dist<0] = 0
+            
+            dist /= dist.sum()
+            m = (preV*dist.reshape(-1,1)).sum(axis=0)
+            m /= np.linalg.norm(m)
+            VM.append(m)
+        self.VM = np.array(VM)
+        
+        #dist /= dist.sum()
+        #dist = sorted(dist)
+
+     
+    def _compute_embedding_vector(self, tokens, **da):
+        m = self.VM[int(da["_ref"])]
+        return np.array([self.get_word_vector(w) -
+                         self.get_word_vector(w).dot(m)*m for w in tokens])   
+        #m = self.preV[int(da["_ref"])]
+        #return np.array([self.get_word_vector(w)-m for w in tokens])   
+
+
+    

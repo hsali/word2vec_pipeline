@@ -23,7 +23,7 @@ n_vocab,n_dim = W.syn0.shape
 word2index = dict(zip(W.index2word, range(n_vocab)))
 
 batch_size = 2**8
-n_epochs = 500
+n_epochs = 100
 
 ##################################################################
 
@@ -38,16 +38,34 @@ word2vec_layer = tf.constant(W.syn0,shape=(n_vocab,n_dim))
 
 e1 = tf.exp(1.0)
 alpha = tf.Variable(tf.ones([n_vocab])/e1)
-alpha = tf.clip_by_value(alpha, 0.0, 1.0)
+#alpha = tf.Variable(tf.ones([n_vocab]))
 
+alpha = tf.clip_by_value(alpha, -2, 2.0)
 Y = X * tf.exp(alpha) / e1
+#Y = X * alpha
 
 Y = tf.matmul(Y, word2vec_layer)
 Y = tf.nn.l2_normalize(Y, dim=1)
 dist = tf.matmul(Y, tf.transpose(Y))
-dist = tf.clip_by_value(dist,0,1)
 
-loss = (tf.reduce_sum(dist) - batch_size) / (batch_size**2-batch_size)
+
+#dist = tf.clip_by_value(dist,0,1)
+#loss = (tf.reduce_sum(dist) - batch_size) / (batch_size**2-batch_size)
+
+# Choose only the largest distance to minimize
+#dist = tf.reduce_max(dist, axis=0)
+#loss = tf.reduce_sum(dist) / batch_size
+
+# Push out the loss in the middle
+#dist = tf.matrix_set_diag(dist, [0,]*batch_size)
+#dist = dist*tf.cos(dist*pi/2)
+#loss = tf.reduce_sum(dist) / (batch_size**2-batch_size)
+
+# Push out the loss in the middle
+dist = tf.matrix_set_diag(dist, [0,]*batch_size)
+dist = tf.cos(dist*pi/2)
+loss = tf.reduce_sum(dist) / (batch_size**2-batch_size)
+
 optimizer = tf.train.AdamOptimizer(0.001).minimize(loss)
 #optimizer = tf.train.GradientDescentOptimizer(0.01).minimize(loss)
 
@@ -84,8 +102,8 @@ for item in item_iterator():
 
 V = np.array(V)
 
-#V[V>1] = 1.0
-#V = V*IDF
+V[V>1] = 1.0
+V = V*IDF
 
 n_samples = V.shape[0]
 

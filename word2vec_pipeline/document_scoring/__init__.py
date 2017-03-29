@@ -6,7 +6,7 @@ from .Z_weighted import score_Z_weighted
 # from .affinity_mapping import affinity_scoring
 
 from .document_scores import score_simple, score_unique
-from .document_scores import score_word_document_dispersion
+from .document_scores import score_word_document_dispersion, score_aux_TF
 from .document_scores import score_simple_TF, score_unique_TF
 from .document_scores import score_locality_hash
 from .reduced_representation import reduced_representation

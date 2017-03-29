@@ -101,8 +101,8 @@ def predict_from_config(config):
         X_META = np.hstack(X_META)
         method = "meta"
 
-        text = "Predicting [{}] [{}:{}]"
-        print(text.format(method, cat_col, pred_col))
+        text = "Predicting [{}] [{}:{}] {}"
+        print(text.format(method, cat_col, pred_col,X_META.shape))
 
         scores, F1, errors, pred, dfs = categorical_predict(X_META, Y,
                                                             method,
