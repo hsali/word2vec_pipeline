@@ -6,7 +6,7 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import f1_score
 import sklearn.ensemble
 
-from utils.parallel_utils import jobmap
+from word2vec_pipeline.utils.parallel_utils import jobmap
 from imblearn.over_sampling import SMOTE
 
 
